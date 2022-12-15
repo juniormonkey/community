@@ -33,9 +33,6 @@ ROUTES_URL = "https://api.511.org/transit/lines?format=json&api_key=%s&operator_
 STOPS_URL = "https://api.511.org/transit/stops?format=json&api_key=%s&operator_id=SF"
 ALERTS_URL = "https://api.511.org/transit/servicealerts?format=json&api_key=%s&agency=SF"
 
-API_KEY_SECRET = "AV6+xWcEQi9NDhqpC/pp2NupmNWFYTeBYuCVcXrkAb8agjj6sL6ZRfIvKDt7iPzpYJ5VE83c2R2cQt7Fn1luIqO04BoQXu9fadB3CYMvvqi56Z++YIkZm7hTol6xnnom3xszeArqfUf/TJXjgaobdX3fToZS8W8LuBB67LVAcsngq9/FP6Yshrj6"
-API_KEY = secret.decrypt(API_KEY_SECRET)
-
 # Colours for Muni Metro/Street Car lines
 MUNI_COLORS = {
     "E": "#666666",
@@ -103,6 +100,24 @@ DEFAULT_CONFIG = {
 }
 
 def get_schema():
+    return schema.Schema(
+        version = "1",
+        fields = [
+            schema.Text(
+                id = "api_key",
+                name = "511.org Developer Token",
+                desc = "A developer token, from https://511.org/open-data/token",
+                icon = "key",
+            ),
+            schema.Generated(
+                id = "generated",
+                source = "api_key",
+                handler = get_schema_internal,
+            ),
+        ],
+    )
+
+def get_schema_internal(api_key):
     formats = [
         schema.Option(
             display = "With destination",
@@ -130,127 +145,119 @@ def get_schema():
         ),
     ]
 
-    return schema.Schema(
-        version = "1",
-        fields = [
-            schema.LocationBased(
-                id = "stop_code",
-                name = "Bus Stop",
-                desc = "A list of bus stops based on a location.",
-                icon = "bus",
-                handler = get_stops,
-            ),
-            schema.Dropdown(
-                id = "route_filter",
-                name = "Route Filter",
-                desc = "Filter to only display one route",
-                icon = "route",
-                default = "all-routes",
-                options = get_route_list(),
-            ),
-            schema.Toggle(
-                id = "show_title",
-                name = "Show stop title",
-                desc = "A toggle to show the stop title.",
-                icon = "signHanging",
-                default = False,
-            ),
-            schema.Dropdown(
-                id = "prediction_format",
-                name = "Prediction format",
-                desc = "Select the format of the prediction text.",
-                icon = "borderAll",
-                default = "long",
-                options = formats,
-            ),
-            schema.Toggle(
-                id = "agency_alerts",
-                name = "Show agency-wide service alerts",
-                desc = "Show service alerts targeted to all of SF Muni.",
-                icon = "exclamation",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "route_alerts",
-                name = "Show route-specific service alerts",
-                desc = "Show service alerts targeted to the routes at the selected stop.",
-                icon = "exclamation",
-                default = False,
-            ),
-            schema.Toggle(
-                id = "stop_alerts",
-                name = "Show stop-specific service alerts",
-                desc = "Show service alerts targeted to the selected stop.",
-                icon = "exclamation",
-                default = False,
-            ),
-            schema.Text(
-                id = "alert_languages",
-                name = "Service alert langauges",
-                desc = "Languages to show service alerts in, separated by commas.",
-                icon = "flag",
-                default = "en",
-            ),
-            schema.Text(
-                id = "minimum_time",
-                name = "Minimum time to show",
-                desc = "Don't show predictions nearer than this minimum.",
-                icon = "clock",
-                default = "0",
-            ),
-        ],
-    )
-
-def get_stops(location):
-    if not API_KEY:
-        return []
-
-    loc = json.decode(location)
-
-    stops = {}
-
-    (timestamp, raw_stops) = fetch_cached(STOPS_URL % API_KEY, 86400)
-
-    if "Contents" not in raw_stops:
-        return []
-
-    stops.update([(stop["id"], stop) for stop in raw_stops["Contents"]["dataObjects"]["ScheduledStopPoint"]])
-
     return [
-        schema.Option(
-            display = "%s (#%s)" % (stop["Name"], stop["id"]),
-            value = stop["id"],
-        )
-        for stop in sorted(stops.values(), key = lambda stop: square_distance(loc["lat"], loc["lng"], stop["Location"]["Latitude"], stop["Location"]["Longitude"]))
+        schema.LocationBased(
+            id = "stop_code",
+            name = "Bus Stop",
+            desc = "A list of bus stops based on a location.",
+            icon = "bus",
+            handler = get_stops(api_key),
+        ),
+        schema.Dropdown(
+            id = "route_filter",
+            name = "Route Filter",
+            desc = "Filter to only display one route",
+            icon = "route",
+            default = "all-routes",
+            options = get_route_list(),
+        ),
+        schema.Toggle(
+            id = "show_title",
+            name = "Show stop title",
+            desc = "A toggle to show the stop title.",
+            icon = "signHanging",
+            default = False,
+        ),
+        schema.Dropdown(
+            id = "prediction_format",
+            name = "Prediction format",
+            desc = "Select the format of the prediction text.",
+            icon = "borderAll",
+            default = "long",
+            options = formats,
+        ),
+        schema.Toggle(
+            id = "agency_alerts",
+            name = "Show agency-wide service alerts",
+            desc = "Show service alerts targeted to all of SF Muni.",
+            icon = "exclamation",
+            default = False,
+        ),
+        schema.Toggle(
+            id = "route_alerts",
+            name = "Show route-specific service alerts",
+            desc = "Show service alerts targeted to the routes at the selected stop.",
+            icon = "exclamation",
+            default = False,
+        ),
+        schema.Toggle(
+            id = "stop_alerts",
+            name = "Show stop-specific service alerts",
+            desc = "Show service alerts targeted to the selected stop.",
+            icon = "exclamation",
+            default = False,
+        ),
+        schema.Text(
+            id = "alert_languages",
+            name = "Service alert langauges",
+            desc = "Languages to show service alerts in, separated by commas.",
+            icon = "flag",
+            default = "en",
+        ),
+        schema.Text(
+            id = "minimum_time",
+            name = "Minimum time to show",
+            desc = "Don't show predictions nearer than this minimum.",
+            icon = "clock",
+            default = "0",
+        ),
     ]
 
-# Function to get the available route list for route filter selection. Additionally adds 'all-routes' option to the beginning of the list
-def get_route_list():
-    if not API_KEY:
+def get_stops(api_key):
+    def get_stops_internal(location):
+        loc = json.decode(location)
+
+        stops = {}
+
+        (timestamp, raw_stops) = fetch_cached(STOPS_URL % api_key, 86400)
+
+        if "Contents" not in raw_stops:
+            return []
+
+        stops.update([(stop["id"], stop) for stop in raw_stops["Contents"]["dataObjects"]["ScheduledStopPoint"]])
+
         return [
+            schema.Option(
+                display = "%s (#%s)" % (stop["Name"], stop["id"]),
+                value = stop["id"],
+            )
+            for stop in sorted(stops.values(), key = lambda stop: square_distance(loc["lat"], loc["lng"], stop["Location"]["Latitude"], stop["Location"]["Longitude"]))
+        ]
+
+    return get_stops_internal
+
+# Function to get the available route list for route filter selection. Additionally adds 'all-routes' option to the beginning of the list
+def get_route_list(api_key):
+    def get_route_list_internal():
+        (timestamp, routes) = fetch_cached(ROUTES_URL % api_key, 86400)
+
+        route_list = [
+            schema.Option(
+                display = "%s %s" % (route["Id"], route["Name"]),
+                value = route["Id"],
+            )
+            for route in routes
+        ]
+        route_list.insert(
+            0,
             schema.Option(
                 display = "All Routes",
                 value = "all-routes",
             ),
-        ]
-
-    (timestamp, routes) = fetch_cached(ROUTES_URL % API_KEY, 86400)
-
-    route_list = [
-        schema.Option(
-            display = "%s %s" % (route["Id"], route["Name"]),
-            value = route["Id"],
         )
-        for route in routes
-    ]
-    route_list.insert(
-        0,
-        schema.Option(
-            display = "All Routes",
-            value = "all-routes",
-        ),
-    )
-    return route_list
+        return route_list
+
+    return get_route_list_internal
 
 def square_distance(lat1, lon1, lat2, lon2):
     latitude_difference = int((float(lat2) - float(lat1)) * 10000)
@@ -280,12 +287,26 @@ def higher_priority_than(pri, threshold):
     return threshold == "Low" or pri == "High" or threshold == pri
 
 def main(config):
-    default_stops = get_stops(DEFAULT_LOCATION)
+    api_key = config.get("api_key")
+
+    if not api_key:
+        return render.Root(
+            child = render.Column(
+                children = [
+                    render.WrappedText(
+                        content = "Enter your developer token: https://511.org /open-data/token",
+                        font = "tom-thumb",
+                    ),
+                ],
+                main_align = "center",
+                expanded = True,
+            ),
+        )
+
+    default_stops = get_stops(api_key)(DEFAULT_LOCATION)
     default_stop = json.encode(default_stops[0]) if default_stops else DEFAULT_STOP
     stop = json.decode(config.get("stop_code", default_stop))
     stopId = stop["value"]
-
-    api_key = API_KEY or config.get("dev_api_key")
 
     ## Fetch and parse predictions
     (stopTitle, routes, predictions) = getPredictions(api_key, config, stop)
