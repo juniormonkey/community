@@ -147,6 +147,7 @@ def get_usgs_data(magnitude_filter = None, time_filter = None, type_filter = Non
                 float(event["properties"]["mag"]),
                 time.from_timestamp(int(event["properties"]["time"] // 1000)),  # convert from ms to seconds
                 event["properties"]["type"].lower(),
+                event["properties"]["type"].lower(),
             ]
 
             if new_event[1] >= magnitude_filter and \
