@@ -891,6 +891,22 @@ def get_schema():
                 options = brightnessOptions,
             ),
             schema.Dropdown(
+                id = "barposition",
+                name = "Text In Background",
+                desc = "Whether the text is on a bar on the bottom or in the background.",
+                icon = "calendarDays",
+                default = dateFormatOptions[0].value,
+                options = dateFormatOptions,
+            ),
+            schema.Dropdown(
+                id = "brightness",
+                name = "Brightness",
+                desc = "Overall brightness.",
+                icon = "paintRoller",
+                default = brightnessOptions[0].value,
+                options = brightnessOptions,
+            ),
+            schema.Dropdown(
                 id = "fadespeed",
                 name = "Fade Speed",
                 desc = "The speed at which the blocks fade out.",
