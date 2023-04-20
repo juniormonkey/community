@@ -129,6 +129,11 @@ def get_schema():
             value = "two_line_four_times",
         ),
     ]
+    scroll_speeds = [
+        schema.Option(display = "Slow", value = "70"),
+        schema.Option(display = "Normal (default)", value = "50"),
+        schema.Option(display = "Fast", value = "30"),
+    ]
 
     return schema.Schema(
         version = "1",
@@ -162,6 +167,14 @@ def get_schema():
                 icon = "borderAll",
                 default = "long",
                 options = formats,
+            ),
+            schema.Dropdown(
+                id = "speed",
+                name = "Scroll Speed",
+                desc = "Change the speed that text scrolls.",
+                icon = "gear",
+                default = "50",
+                options = scroll_speeds,
             ),
             schema.Toggle(
                 id = "agency_alerts",
@@ -204,9 +217,9 @@ def get_schema():
 def fetch_stops(api_key):
     stops = {}
 
-    (timestamp, raw_stops) = fetch_cached(STOPS_URL % api_key, 86400)
+    (_, raw_stops) = fetch_cached(STOPS_URL % api_key, 86400)
 
-    if "Contents" in raw_stops:
+    if type(raw_stops) != "string" and "Contents" in raw_stops:
         stops.update([(stop["id"], stop) for stop in raw_stops["Contents"]["dataObjects"]["ScheduledStopPoint"]])
 
     return stops
@@ -236,7 +249,9 @@ def get_route_list():
             ),
         ]
 
-    (timestamp, routes) = fetch_cached(ROUTES_URL % API_KEY, 86400)
+    (_, routes) = fetch_cached(ROUTES_URL % API_KEY, 86400)
+    if type(routes) == "string":
+        return []
 
     route_list = [
         schema.Option(
@@ -268,7 +283,7 @@ def fetch_cached(url, ttl):
         res = http.get(url)
         if res.status_code != 200:
             print("511.org request to %s failed with status %d", (url, res.status_code))
-            return (time.now().unix, {})
+            return (time.now().unix, res.body().lstrip("\ufeff"))
 
         # Trim off the UTF-8 byte-order mark
         body = res.body().lstrip("\ufeff")
@@ -304,7 +319,9 @@ def main(config):
 def getPredictions(api_key, config, stop):
     stopId = stop["value"]
     stopTitle = stop["display"]
-    (data_timestamp, data) = fetch_cached(PREDICTIONS_URL % api_key, 240)
+    (_, data) = fetch_cached(PREDICTIONS_URL % api_key, 240)
+    if type(data) == "string":
+        return (data, [], [])
 
     route_filter = config.get("route_filter", DEFAULT_CONFIG["route_filter"])
 
@@ -315,8 +332,6 @@ def getPredictions(api_key, config, stop):
     stops = fetch_stops(api_key)
     if stopId in stops:
         stopTitle = stops[stopId]["Name"]
-
-    data_age_seconds = time.now().unix - data_timestamp
 
     entities = data.get("Entities", {})
     if not entities:
@@ -387,7 +402,9 @@ def getPredictions(api_key, config, stop):
     return (stopTitle, routes, output)
 
 def getMessages(api_key, config, routes, stopId):
-    (data_timestamp, data) = fetch_cached(ALERTS_URL % api_key, 240)
+    (_, data) = fetch_cached(ALERTS_URL % api_key, 240)
+    if type(data) == "string":
+        return [data]
 
     # https://developers.google.com/transit/gtfs-realtime/reference#message-feedentity
     entities = data.get("Entities")
@@ -403,7 +420,6 @@ def getMessages(api_key, config, routes, stopId):
         if not alert:
             continue
 
-        languages = config.str("alert_languages", "en").split(",")
         translations = [translation["Text"] for translation in alert["HeaderText"]["Translations"] if translation["Language"] == "en"]
 
         if not translations:
@@ -453,7 +469,7 @@ def renderOutput(stopTitle, output, messages, config):
     predictionLines = []
 
     if "short" == config.get("prediction_format"):
-        predictionLines = shortPredictions(output, messages, lines, config)
+        predictionLines = shortPredictions(output, lines)
     else:
         predictionLines = longRows(output[:lines], config)
 
@@ -491,6 +507,8 @@ def renderOutput(stopTitle, output, messages, config):
         )
 
     return render.Root(
+        delay = int(config.str("speed", "50")),  # Allow customization of scroll speed.
+        show_full_animation = True,
         child = render.Column(
             children = rows,
             expanded = True,
@@ -505,11 +523,11 @@ def calculateLength(predictions):
             4 * len(",".join(predictions[:2])) +
             4)  # trailing space
 
-def shortPredictions(output, messages, lines, config):
+def shortPredictions(output, lines):
     predictionLengths = [calculateLength(predictions) for (routeTag, predictions) in output]
 
     rows = []
-    for line in range(lines):
+    for _ in range(lines):
         row = []
         cumulativeLength = 0
         for length in predictionLengths:

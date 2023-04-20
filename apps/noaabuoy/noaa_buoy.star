@@ -5,13 +5,13 @@ Description: Display swell,wind,temperature,misc data for user specified buoy. F
 Author: tavdog
 """
 
+load("cache.star", "cache")
+load("encoding/json.star", "json")
+load("http.star", "http")
+load("re.star", "re")
 load("render.star", "render")
 load("schema.star", "schema")
-load("http.star", "http")
-load("encoding/json.star", "json")
-load("cache.star", "cache")
 load("xpath.star", "xpath")
-load("re.star", "re")
 
 print_debug = False
 
@@ -72,10 +72,16 @@ def fetch_data(buoy_id, last_data):
     debug_print(resp)
     if resp.status_code != 200:
         if len(last_data) != 0:  # try to return the last cached data if it exists to account for spurious api failures
+            # add the stale counter so we know it's not new data and how many cycles the buoy has been down for.
+            if "stale" not in last_data:
+                last_data["stale"] = 1
+            else:
+                last_data["stale"] = last_data["stale"] + 1
+            debug_print("stale counter to :" + str(last_data["stale"]))
             return last_data
         elif resp.status_code == 404:
             data["name"] = buoy_id
-            data["error"] = "ID not valid"
+            data["error"] = "No Data"
             return data
         else:
             data["name"] = buoy_id
@@ -132,12 +138,12 @@ def main(config):
     buoy_id = config.get("buoy_id", "")
 
     if buoy_id == "none" or buoy_id == "":  # if manual input is empty load from local selection
-        local_selection = config.get("local_buoy_id", '{"display": "Station 51202 - Waimea Bay", "value": "51201"}')  # default is Waimea
+        local_selection = config.get("local_buoy_id", '{"display": "Station 51213 - South Lanai", "value": "51213"}')  # default is Waimea
         local_selection = json.decode(local_selection)
         if "value" in local_selection:
             buoy_id = local_selection["value"]
         else:
-            buoy_id = "51201"
+            buoy_id = "51213"
 
     buoy_name = config.get("buoy_name", "")
     h_unit_pref = config.get("h_units", "feet")
@@ -164,8 +170,13 @@ def main(config):
         debug_print("no usecache so fetching data")
         data = fetch_data(buoy_id, data)  # we pass in old data object so we can re-use data if missing from fetched data
         if data != None:
-            cache.set(cache_key, json.encode(data), ttl_seconds = 1800)  # 30 minutes, should never actually expire because always getting re set
-            cache.set(cache_key + "_usecache", '{"usecache":"true"}', ttl_seconds = 600)  # 10 minutes
+            if "stale" in data and data["stale"] > 2:
+                debug_print("expring stale cache")
+                cache.set(cache_key, json.encode(data), ttl_seconds = 1)  # 1 sec expire almost immediately
+            else:
+                debug_print("Setting cache with : " + str(data))
+                cache.set(cache_key, json.encode(data), ttl_seconds = 1800)  # 30 minutes, should never actually expire because always getting re set
+                cache.set(cache_key + "_usecache", '{"usecache":"true"}', ttl_seconds = 600)  # 10 minutes
 
     if buoy_name == "" and "name" in data:
         debug_print("setting buoy_name to : " + data["name"])
@@ -189,11 +200,12 @@ def main(config):
         return render.Root(
             child = render.Box(
                 render.Column(
+                    expanded = True,
                     cross_align = "center",
-                    main_align = "center",
+                    main_align = "space_evenly",
                     children = [
                         render.Text(
-                            content = buoy_id,
+                            content = "Buoy:" + str(buoy_id),
                             font = "tb-8",
                             color = swell_color,
                         ),
@@ -211,9 +223,8 @@ def main(config):
             ),
         )
 
-        #SWELL###########################################################
-
     elif (data.get("DPD") and config.get("display_swell", True) == "true" and swell_over_threshold(min_size, h_unit_pref, data)):
+        #SWELL###########################################################
         height = ""
         if "MWD" in data:
             mwd = data["MWD"]
@@ -357,10 +368,9 @@ def main(config):
             ),
         )
 
+    elif (config.get("display_misc", False) == "true"):
         # MISC ################################################################
         # DEW with PRES with ATMP    or  TIDE with WTMP with SAL  or
-
-    elif (config.get("display_misc", False) == "true"):
         if "TIDE" in data:  # do some tide stuff, usually wtmp is included and somties SAL?
             water = "--"
             if data.get("WTMP"):
