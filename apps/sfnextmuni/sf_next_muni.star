@@ -280,7 +280,7 @@ def fetch_cached(url, ttl):
     if cached and timestamp:
         return (int(timestamp), json.decode(cached))
     else:
-        res = http.get(url)
+        res = http.get(url, ttl_seconds = timeout)
         if res.status_code != 200:
             print("511.org request to %s failed with status %d", (url, res.status_code))
             return (time.now().unix, res.body().lstrip("\ufeff"))
