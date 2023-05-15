@@ -5,7 +5,6 @@ Description: Shows the availability of bikes and e-bikes at a Bay Wheels station
 Author: Martin Strauss
 """
 
-load("cache.star", "cache")
 load("encoding/base64.star", "base64")
 load("encoding/json.star", "json")
 load("http.star", "http")
@@ -135,13 +134,7 @@ def square_distance(lat1, lon1, lat2, lon2):
     return latitude_difference * latitude_difference + longitude_difference * longitude_difference
 
 def fetch_cached(url, ttl):
-    cached = cache.get(url)
-    if cached != None:
-        return json.decode(cached)
-    else:
-        res = http.get(url)
-        if res.status_code != 200:
-            fail("GBFS request to %s failed with status %d", (url, res.status_code))
-        data = res.json()
-        cache.set(url, json.encode(data), ttl_seconds = ttl)
-        return data
+    res = http.get(url, ttl_seconds = ttl)
+    if res.status_code != 200:
+        fail("GBFS request to %s failed with status %d - %s", (url, res.status_code, res.body()))
+    return res.json()
